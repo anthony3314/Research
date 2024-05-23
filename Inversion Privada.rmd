@@ -1,0 +1,208 @@
+---
+title: "Inversion Privada"
+author: "Anthony Laredo Ccollatupa"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r pressure1}
+
+# Todos los paquetes a utilizar
+chooseCRANmirror(ind = 1)
+install.packages("rvest")
+install.packages("purrr")
+library(rvest)
+library(purrr)
+library(ggplot2)
+library(dplyr)
+
+# URLs de las páginas a ser scrapeadas
+urls <- c(
+  "https://estadisticas.bcrp.gob.pe/estadisticas/series/anuales/resultados/PM04919AA/html", # Inversión Privada
+  "https://estadisticas.bcrp.gob.pe/estadisticas/series/mensuales/resultados/PD37967GM/html", # Consumo de Cemento
+  "https://estadisticas.bcrp.gob.pe/estadisticas/series/mensuales/resultados/PD38045AM/html", # Expectativa a 3 meses
+  "https://estadisticas.bcrp.gob.pe/estadisticas/series/mensuales/resultados/PD37981AM/html" # Expectativa a 12 meses
+)
+
+# Función para leer y extraer la tabla de una URL
+leer_tabla <- function(url) {
+  pagina <- read_html(url)
+  tabla <- pagina %>%
+    html_nodes("table") %>%  
+    .[[2]] %>%               
+    html_table(fill = TRUE)
+  return(tabla)
+}
+
+# Aplicar la función a todas las URLs
+tablas <- map(urls, leer_tabla)
+
+# Importaciones de bienes de capital se optuvo del Reporte de la Balanza Comercial del BCRP
+Fecha <- c(1:13)
+Imp_capital <- c(0.6,-14.9,10.3,5,-3.3,-3.7,-5.3,13.3,10,-3.8,15.9,3.9,-6.5)
+Imp_bcapital <- data.frame(Fecha,Imp_capital)
+
+# Agregar Imp_bcapital a la lista tablas
+tablas <- append(tablas, list(Imp_bcapital))
+
+# Nombrar cada tabla de la lista tablas
+nombres <- c("Inversion_Privada", "Consumo_Cemento", "Expectativa_3meses", "Expectativa_12meses", "Imp_bcapital")
+names(tablas) <- nombres
+
+tablas$Inversion_Privada <- as.data.frame(tablas$Inversion_Privada) %>%
+  rename(Inversion_Privada = names(tablas$Inversion_Privada)[2]) %>%
+  slice_tail(n = 5) %>%  # Seleccionar las últimas 10 filas
+  mutate(Inversion_Privada = as.numeric(gsub(",", ".", Inversion_Privada))) %>%
+  add_row(Fecha = 2024, Inversion_Privada = 2.3)  # Agregar la nueva fila
+
+tablas$Consumo_Cemento <- as.data.frame(tablas$Consumo_Cemento) %>%
+  rename(Consumo_Cemento = names(tablas$Consumo_Cemento)[2]) %>%
+  slice_tail(n = 14) %>% head(-1) %>%
+  mutate(Fecha = seq.Date(from = as.Date("2023-03-01"), by = "month", length.out = 13))
+
+tablas$Expectativa_3meses <- as.data.frame(tablas$Expectativa_3meses) %>%
+  rename(Expectativa_3meses = names(tablas$Expectativa_3meses)[2]) %>%
+  mutate(Expectativa_3meses = as.numeric(Expectativa_3meses)) %>%
+  slice_tail(n = 17) %>% head(-1) %>%
+  mutate(Fecha = seq.Date(from = as.Date("2022-12-01"), by = "month", length.out = 16))
+
+tablas$Expectativa_12meses <- as.data.frame(tablas$Expectativa_12meses) %>%
+  rename(Expectativa_12meses = names(tablas$Expectativa_12meses)[2]) %>%
+  mutate(Expectativa_12meses = as.numeric(Expectativa_12meses)) %>%
+  slice_tail(n = 17) %>% head(-1) %>%
+  mutate(Fecha = seq.Date(from = as.Date("2022-12-01"), by = "month", length.out = 16))
+
+tablas$Imp_bcapital <- as.data.frame(tablas$Imp_bcapital) %>%
+  rename(Imp_bcapital = names(tablas$Imp_bcapital)[2]) %>%
+  mutate(Imp_bcapital = as.numeric(Imp_bcapital)) %>%
+  mutate(Fecha = seq.Date(from = as.Date("2023-03-01"), by = "month", length.out = 13))
+
+tablas
+
+```
+
+## Gráficos
+
+```{r}
+
+# Grafico de Inversion Privada
+g1 <- ggplot(tablas$Inversion_Privada,aes(x=Fecha,y=Inversion_Privada))+
+  geom_bar(stat="identity",fill = "skyblue")+
+  geom_text(aes(label=round(Inversion_Privada,1)),vjust=-0.5,color="black",size=3)+
+  labs(title="INVERSIÓN PRIVADA (VAR% 12 MESES)",
+       x="",
+       y="")+
+  theme_minimal() + 
+  scale_x_continuous(breaks = tablas$Inversion_Privada$Fecha)
+
+g1
+
+```
+
+```{r}
+
+# Grafico de Consumo de Cemento
+g2 <- ggplot(tablas$Consumo_Cemento, aes(x=Fecha, y=Consumo_Cemento)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_text(aes(label = round(Consumo_Cemento, 1)), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "CONSUMO DE CEMENTO (VAR% 12 MESES)",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  # Rotar etiquetas del eje x
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")  # Mostrar etiquetas de mes y año
+
+g2
+
+```
+
+```{r}
+
+# Grafico de Indice de Expectativas - 3 meses
+g3 <- ggplot(tablas$Expectativa_3meses, aes(x = Fecha, y = Expectativa_3meses)) +
+  geom_line(color = "darkgreen") +  # Línea original
+  geom_text(aes(label=round(Expectativa_3meses,1)),vjust=-0.5,color="darkgreen",size=3)+
+  labs(title = "ÍNDICE DE EXPECTATIVAS DE LA ECONOMÍA A 3 MESES",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  # Rotar etiquetas del eje x
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")  # Mostrar etiquetas de mes y año
+
+g3
+
+```
+
+```{r}
+
+# Grafico de Indice de Expectativas - 12 meses
+g4 <- ggplot(tablas$Expectativa_12meses, aes(x = Fecha, y = Expectativa_12meses)) +
+  geom_line(color = "blue") +  # Línea original
+  geom_text(aes(label=round(Expectativa_12meses,1)),vjust=-0.5,color="blue",size=3)+
+  labs(title = "ÍNDICE DE EXPECTATIVAS DE LA ECONOMÍA A 12 MESES",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  # Rotar etiquetas del eje x
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")  # Mostrar etiquetas de mes y año
+
+g4
+
+```
+
+```{r}
+
+# Grafico de Importacion de Capital
+g5 <- ggplot(tablas$Imp_bcapital, aes(x=Fecha, y=Imp_bcapital)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_text(aes(label = round(Imp_bcapital, 1)), vjust = -0.5, color = "black", size = 3) +
+  labs(title = "VOLUMEN DE IMPORTACIONES DE BIENES DE CAPITAL (VAR% 12 MESES)",
+       x = "",
+       y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  # Rotar etiquetas del eje x
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")  # Mostrar etiquetas de mes y año
+
+g5
+
+```
+
+```{r}
+
+# Grafico de Indice de Expectativas - 3 y 12 meses
+df_merged <- merge(tablas$Expectativa_12meses, tablas$Expectativa_3meses, by = "Fecha")
+
+g6 <- ggplot(df_merged, aes(x = Fecha)) +
+  geom_line(aes(y = Expectativa_12meses, color = "A 12 meses"), size = 1) +
+  geom_line(aes(y = Expectativa_3meses, color = "A 3 meses"), size = 1) +
+  geom_text(aes(x = Fecha, y = Expectativa_12meses, label = round(Expectativa_12meses, 1)),
+            vjust = -0.5, color = "blue", size = 3) +
+  geom_text(aes(x = Fecha, y = Expectativa_3meses, label = round(Expectativa_3meses, 1)), 
+            vjust = -0.5, color = "darkgreen", size = 3) +
+  labs(title = "ÍNDICE DE EXPECTATIVAS DE LA ECONOMÍA A 3 Y 12 MESES",
+       x = "",
+       y = "") +
+  scale_color_manual(name = "Leyenda",
+                     values = c("A 12 meses" = "blue", "A 3 meses" = "darkgreen")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  # Rotar etiquetas del eje x
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")  # Mostrar etiquetas de mes y año
+
+g6
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
